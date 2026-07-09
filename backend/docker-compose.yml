@@ -1,0 +1,72 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: muledetect
+      POSTGRES_USER: mule
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    networks:
+      - internal
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./scripts/db_init.sql:/docker-entrypoint-initdb.d/01_init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mule -d muledetect"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    secrets:
+      - openrouter_key
+      - db_password
+      - jwt_secret
+    environment:
+      OPENROUTER_KEY_FILE: /run/secrets/openrouter_key
+      DB_PASSWORD_FILE: /run/secrets/db_password
+      DB_HOST: db
+      DB_NAME: muledetect
+      DB_USER: mule
+      JWT_SECRET_FILE: /run/secrets/jwt_secret
+      ENVIRONMENT: development
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
+    volumes:
+      - ./ml/artifacts:/app/ml/artifacts
+      - .:/app
+    mem_limit: 2g
+
+  frontend:
+    image: nginx:alpine
+    ports:
+      - "5500:80"
+    volumes:
+      - ../frontend_edited:/usr/share/nginx/html:ro
+    networks:
+      - internal
+
+secrets:
+  openrouter_key:
+    file: ./secrets/openrouter_key.txt
+  db_password:
+    file: ./secrets/db_password.txt
+  jwt_secret:
+    file: ./secrets/jwt_secret.txt
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  pgdata:
