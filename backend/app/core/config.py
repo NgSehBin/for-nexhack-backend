@@ -15,9 +15,9 @@ def _read_secret(env_var: str, fallback: str | None = None) -> str:
 
 
 class Settings(BaseSettings):
-    OPENROUTER_API_KEY: str = ""
-    PRIMARY_MODEL: str = "openai/gpt-oss-120b:free"
-    FALLBACK_MODEL: str = "z-ai/glm-4.5-air:free"
+    GROQ_API_KEY: str = ""
+    PRIMARY_MODEL: str = "llama-3.3-70b-versatile"
+    FALLBACK_MODEL: str = "llama3-70b-8192"
     DATABASE_URL: str = ""
     JWT_SECRET: str = ""
 
@@ -45,25 +45,37 @@ class Settings(BaseSettings):
 
 
 def load_settings() -> Settings:
+    import os
     s = Settings()
 
     try:
-        s.OPENROUTER_API_KEY = _read_secret("OPENROUTER_KEY_FILE", s.OPENROUTER_API_KEY)
+        s.GROQ_API_KEY = _read_secret("GROQ_KEY_FILE", s.GROQ_API_KEY)
     except RuntimeError:
         pass
 
-    try:
-        db_password = _read_secret("DB_PASSWORD_FILE", "mule_secret")
-        s.DATABASE_URL = (
-            f"postgresql://{s.DB_USER}:{db_password}@{s.DB_HOST}/{s.DB_NAME}"
-        )
-    except RuntimeError:
-        pass
+    # On Render (and anywhere else without a mounted secret file), a plain
+    # DATABASE_URL env var is provided directly — use it as-is if present.
+    render_db_url = os.getenv("DATABASE_URL")
+    if render_db_url:
+        s.DATABASE_URL = render_db_url
+    else:
+        try:
+            db_password = _read_secret("DB_PASSWORD_FILE", "mule_secret")
+            s.DATABASE_URL = (
+                f"postgresql://{s.DB_USER}:{db_password}@{s.DB_HOST}/{s.DB_NAME}"
+            )
+        except RuntimeError:
+            pass
 
-    try:
-        s.JWT_SECRET = _read_secret("JWT_SECRET_FILE", "dev_jwt_secret_change_me")
-    except RuntimeError:
-        s.JWT_SECRET = "dev_jwt_secret_change_me"
+    # Same idea for JWT_SECRET: allow a plain env var override.
+    render_jwt_secret = os.getenv("JWT_SECRET")
+    if render_jwt_secret:
+        s.JWT_SECRET = render_jwt_secret
+    else:
+        try:
+            s.JWT_SECRET = _read_secret("JWT_SECRET_FILE", "dev_jwt_secret_change_me")
+        except RuntimeError:
+            s.JWT_SECRET = "dev_jwt_secret_change_me"
 
     return s
 
