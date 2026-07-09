@@ -30,10 +30,23 @@ if config.config_file_name is not None:
 
 def get_database_url() -> str:
     """
-    Build the Postgres URL the same way app/core/config.py does for the
-    running app — read the password from the mounted secret file, never
-    from an env var or hardcoded string.
+    If a plain DATABASE_URL env var is set (e.g. Render's External Database
+    URL, exported before running `alembic upgrade head` from a laptop),
+    use it directly. Otherwise fall back to the local Docker Compose setup,
+    which builds the URL from the mounted secret file.
     """
+    render_db_url = os.getenv("DATABASE_URL")
+    if render_db_url:
+        # Alembic needs the psycopg2 driver prefix; Render's URL usually
+        # starts with "postgresql://" or "postgres://" — normalize it.
+        if render_db_url.startswith("postgres://"):
+            render_db_url = render_db_url.replace("postgres://", "postgresql://", 1)
+        if render_db_url.startswith("postgresql://"):
+            render_db_url = render_db_url.replace(
+                "postgresql://", "postgresql+psycopg2://", 1
+            )
+        return render_db_url
+
     password_file = PROJECT_ROOT / "secrets" / "db_password.txt"
     try:
         db_password = password_file.read_text(encoding="utf-8").strip()
